@@ -368,7 +368,9 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <input type="text" class="search-box" id="sheetSearch" placeholder="단지명 검색..." style="width:200px">
       <select class="sel" id="sheetRegion" style="width:130px"><option value="">전체 지역</option></select>
       <select class="sel" id="sheetDateFilter" style="width:130px"><option value="">모든 날짜</option></select>
-      <span style="font-size:11px;color:var(--text3);margin-left:4px">셀 클릭 → 직접 편집 가능</span>
+      <input type="date" id="newDateInput"
+        style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-size:12px;color-scheme:dark;outline:none">
+      <button class="btn btn-primary" style="font-size:11px" onclick="addNewDateRow()">+ 날짜 추가</button>
     </div>
     <div class="sheet-wrap" id="sheetWrap"></div>
   </div>
@@ -478,6 +480,7 @@ let sise = {}; // { apt_id: [{date, buy, rent, listings, memo}] }
 let currentId = null;
 let editingId = null;
 let chart = null;
+let pendingDates = []; // 아직 데이터 없이 추가된 날짜
 
 // ── DB 함수 ────────────────────────────────
 async function dbLoadApts() {
@@ -612,7 +615,11 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet'][i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-' + tab).classList.add('active');
-  if (tab === 'sheet') renderSheet();
+  if (tab === 'sheet') {
+    const el = document.getElementById('newDateInput');
+    if (el && !el.value) el.value = new Date().toISOString().slice(0,10);
+    renderSheet();
+  }
 }
 
 // ══════════════════════════════════════════
@@ -1131,7 +1138,7 @@ function getSheetApts() {
 }
 
 function getAllDates() {
-  const dateSet = new Set();
+  const dateSet = new Set(pendingDates);
   Object.values(sise).forEach(recs => recs?.forEach(r => dateSet.add(r.date)));
   return [...dateSet].sort();
 }
@@ -1141,8 +1148,8 @@ function renderSheet() {
   const filtered = getSheetApts();
   const dateFilter = document.getElementById('sheetDateFilter')?.value || '';
 
-  // 날짜 목록 (필터 셀렉트 채우기)
-  const allDates = getAllDates();
+  // 날짜 목록 (필터 셀렉트 채우기) - 내림차순
+  const allDates = getAllDates().reverse();
   const dateFilterEl = document.getElementById('sheetDateFilter');
   if (dateFilterEl) {
     const cur = dateFilterEl.value;
@@ -1237,16 +1244,6 @@ function renderSheet() {
     }).join('')}</tr>`;
   });
 
-  // 새 날짜 추가 행
-  html += `<tr><td class="row-label" style="color:var(--blue)">새 날짜</td>
-  <td colspan="${filtered.length}" style="background:var(--bg);padding:5px 8px">
-    <div style="display:flex;align-items:center;gap:8px">
-      <input type="date" id="newDateInput" value="${new Date().toISOString().slice(0,10)}"
-        style="background:var(--surf2);border:1px solid var(--border);color:var(--text);padding:4px 8px;border-radius:4px;font-size:11px;color-scheme:dark;outline:none">
-      <button class="btn btn-primary" style="font-size:10px;padding:4px 10px" onclick="addNewDateRow()">+ 날짜 추가</button>
-    </div>
-  </td></tr>`;
-
   html += '</tbody></table>';
   wrap.innerHTML = html;
 }
@@ -1277,6 +1274,8 @@ async function updateSiseCell(aptId, date, field, value) {
       const saved = await dbSaveRecord({ apt_id: aptId, date,
         buy: rec.buy, rent: rec.rent, listings: rec.listings, memo: rec.memo });
       rec.id = saved.id;
+      // 실제 데이터 저장됐으면 pendingDates에서 제거
+      pendingDates = pendingDates.filter(d => d !== date);
     } catch(e) { toast('저장 실패: ' + e.message, 'err'); return; }
   }
 
@@ -1285,20 +1284,23 @@ async function updateSiseCell(aptId, date, field, value) {
 }
 
 function addNewDateRow() {
+  if (!currentUser) { showLogin(); return; }
   const d = document.getElementById('newDateInput')?.value;
   if (!d) return;
-  // 해당 날짜에 더미 레코드 없으면 첫 단지에 빈 레코드 추가 (날짜가 보이게만)
   if (!getAllDates().includes(d)) {
-    // 그냥 날짜만 추가 → 실제 시트를 재렌더
-    // 빈 레코드 추가 없이 날짜 필터를 조작하는 방식
-    const sel = document.getElementById('sheetDateFilter');
-    if (sel) {
-      const o = document.createElement('option');
-      o.value = d; o.textContent = d;
-      sel.appendChild(o);
-    }
+    pendingDates.push(d);
   }
   renderSheet();
+  // 추가된 날짜 행으로 스크롤
+  setTimeout(() => {
+    const rows = document.querySelectorAll('.row-date-label');
+    for (const row of rows) {
+      if (row.textContent.includes(d)) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        break;
+      }
+    }
+  }, 150);
 }
 
 // ══════════════════════════════════════════
