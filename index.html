@@ -287,6 +287,21 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 .loading{text-align:center;padding:12px;color:var(--text3);font-size:11px;animation:blink 1s infinite}
 @keyframes blink{0%,100%{opacity:.4}50%{opacity:1}}
 
+/* 로그인 오버레이 */
+.login-overlay{position:fixed;inset:0;background:var(--bg);z-index:500;display:flex;align-items:center;justify-content:center}
+.login-box{background:var(--surf1);border:1px solid var(--border);border-radius:14px;padding:36px 40px;width:360px;text-align:center}
+.login-logo{font-size:22px;font-weight:700;color:var(--blue);margin-bottom:4px}
+.login-sub{font-size:12px;color:var(--text3);margin-bottom:28px}
+.login-box .form-group{text-align:left;margin-bottom:14px}
+.login-box .form-group label{font-size:11px;color:var(--text3);display:block;margin-bottom:5px}
+.login-box .form-group input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:10px 13px;border-radius:7px;font-size:13px;font-family:'Noto Sans KR',sans-serif;outline:none;transition:border-color .15s}
+.login-box .form-group input:focus{border-color:var(--blue)}
+.login-btn{width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:7px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Noto Sans KR',sans-serif;margin-top:6px;transition:background .15s}
+.login-btn:hover{background:var(--blue2)}
+.login-err{font-size:12px;color:var(--red);margin-top:10px;min-height:18px}
+.user-badge{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px}
+.user-badge span{color:var(--text2)}
+
 /* 색상 변화 뱃지 */
 .trend{display:inline-flex;align-items:center;gap:2px;font-size:10px;padding:1px 5px;border-radius:3px;font-family:'JetBrains Mono',monospace}
 .trend.up{background:rgba(239,68,68,.15);color:#ef4444}
@@ -306,8 +321,9 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
       <div class="toggle-track"><div class="toggle-thumb"></div></div>
       <span id="themeLabel">다크</span>
     </div>
-    <button class="btn btn-outline" style="font-size:11px" onclick="openAddModal()">+ 단지 추가</button>
-    <button class="btn btn-outline" style="font-size:11px" onclick="exportCSV()">CSV 내보내기</button>
+    <div id="authButtons">
+      <!-- 로그인 상태에 따라 동적 렌더 -->
+    </div>
   </div>
 </div>
 
@@ -428,6 +444,24 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 
 <div class="toast" id="toast"></div>
 
+<!-- 로그인 오버레이 -->
+<div class="login-overlay" id="loginOverlay" style="display:none">
+  <div class="login-box">
+    <div class="login-logo">🔭 정찰병</div>
+    <div class="login-sub">시세 트래커 — 관리자 로그인</div>
+    <div class="form-group">
+      <label>이메일</label>
+      <input type="email" id="loginEmail" placeholder="이메일 입력" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div class="form-group">
+      <label>비밀번호</label>
+      <input type="password" id="loginPw" placeholder="비밀번호 입력" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="login-btn" onclick="doLogin()">로그인</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════
 //  Supabase 초기화
@@ -497,7 +531,64 @@ async function dbDeleteRecord(recordId) {
 }
 
 // ══════════════════════════════════════════
-//  테마 토글
+//  Auth
+// ══════════════════════════════════════════
+let currentUser = null;
+
+function renderAuthButtons() {
+  const el = document.getElementById('authButtons');
+  if (!el) return;
+  if (currentUser) {
+    el.innerHTML = `
+      <div class="user-badge">
+        <span>${currentUser.email}</span>
+      </div>
+      <button class="btn btn-outline" style="font-size:11px" onclick="openAddModal()">+ 단지 추가</button>
+      <button class="btn btn-outline" style="font-size:11px" onclick="exportCSV()">CSV 내보내기</button>
+      <button class="btn btn-ghost" style="font-size:11px" onclick="doLogout()">로그아웃</button>`;
+  } else {
+    el.innerHTML = `
+      <button class="btn btn-outline" style="font-size:11px" onclick="exportCSV()">CSV 내보내기</button>
+      <button class="btn btn-primary" style="font-size:11px" onclick="showLogin()">🔐 로그인</button>`;
+  }
+}
+
+function showLogin() {
+  document.getElementById('loginOverlay').style.display = 'flex';
+  setTimeout(() => document.getElementById('loginEmail')?.focus(), 100);
+}
+
+function hideLogin() {
+  document.getElementById('loginOverlay').style.display = 'none';
+  document.getElementById('loginErr').textContent = '';
+}
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pw = document.getElementById('loginPw').value;
+  const errEl = document.getElementById('loginErr');
+  if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력하세요'; return; }
+  errEl.textContent = '로그인 중...';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password: pw });
+  if (error) { errEl.textContent = '로그인 실패: ' + error.message; return; }
+  currentUser = data.user;
+  hideLogin();
+  renderAuthButtons();
+  toast('로그인 완료 ✓');
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  currentUser = null;
+  renderAuthButtons();
+  toast('로그아웃 완료');
+}
+
+// 로그인 오버레이 바깥 클릭 시 닫기
+document.addEventListener('click', e => {
+  const overlay = document.getElementById('loginOverlay');
+  if (e.target === overlay) hideLogin();
+});
 // ══════════════════════════════════════════
 function toggleTheme() {
   const isLight = document.documentElement.classList.toggle('light');
@@ -517,17 +608,6 @@ function toggleTheme() {
   }
 }
 
-// 저장된 테마 복원
-(function() {
-  const saved = localStorage.getItem('sise_theme');
-  if (saved === 'light') {
-    document.documentElement.classList.add('light');
-    document.addEventListener('DOMContentLoaded', () => {
-      const el = document.getElementById('themeLabel');
-      if (el) el.textContent = '라이트';
-    });
-  }
-})();
 function switchTab(tab) {
   document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['mgr','sheet'][i] === tab));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -867,6 +947,7 @@ function applyRealTrade(price, date, aptId) {
 //  시세 저장/삭제
 // ══════════════════════════════════════════
 async function saveRecord(aptId) {
+  if (!currentUser) { showLogin(); return; }
   const date = document.getElementById('inp_date').value;
   const buy = parseInt(document.getElementById('inp_buy').value) || null;
   const rent = parseInt(document.getElementById('inp_rent').value) || null;
@@ -894,6 +975,7 @@ async function saveRecord(aptId) {
 }
 
 async function deleteRecord(aptId, idx) {
+  if (!currentUser) { showLogin(); return; }
   if (!confirm('삭제하시겠습니까?')) return;
   const rec = sise[aptId]?.[idx];
   if (!rec) return;
@@ -944,6 +1026,7 @@ function initChart(apt, records) {
 //  단지 추가/편집 모달
 // ══════════════════════════════════════════
 function openAddModal() {
+  if (!currentUser) { showLogin(); return; }
   editingId = null;
   document.getElementById('modalTitle').textContent = '단지 추가';
   ['f_name','f_region','f_dong','f_year','f_units','f_supply','f_private','f_work','f_traffic','f_env','f_school','f_structure','f_link'].forEach(id => {
@@ -975,6 +1058,7 @@ function openEditModal(aptId) {
 }
 
 async function saveApt() {
+  if (!currentUser) { showLogin(); return; }
   const name = document.getElementById('f_name').value.trim();
   if (!name) { toast('단지명을 입력하세요', 'err'); return; }
   const supplyArea = parseFloat(document.getElementById('f_supply').value) || null;
@@ -1020,6 +1104,7 @@ async function saveApt() {
 }
 
 async function deleteApt(aptId) {
+  if (!currentUser) { showLogin(); return; }
   if (!confirm('단지와 모든 시세 데이터를 삭제하시겠습니까?')) return;
   try {
     await dbDeleteApt(aptId);
@@ -1167,6 +1252,7 @@ function renderSheet() {
 }
 
 async function updateSiseCell(aptId, date, field, value) {
+  if (!currentUser) { showLogin(); return; }
   if (!sise[aptId]) sise[aptId] = [];
   let rec = sise[aptId].find(r => r.date === date);
 
@@ -1258,6 +1344,19 @@ document.addEventListener('keydown', e => {
 //  초기화
 // ══════════════════════════════════════════
 async function init() {
+  // 테마 복원
+  const savedTheme = localStorage.getItem('sise_theme');
+  if (savedTheme === 'light') {
+    document.documentElement.classList.add('light');
+    const el = document.getElementById('themeLabel');
+    if (el) el.textContent = '라이트';
+  }
+
+  // 세션 복원
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) currentUser = session.user;
+  renderAuthButtons();
+
   // 로딩 표시
   document.getElementById('aptList').innerHTML = '<div class="loading" style="padding:20px;text-align:center">DB 연결 중...</div>';
 
