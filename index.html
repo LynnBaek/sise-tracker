@@ -897,6 +897,18 @@ async function doLogin() {
   hideLogin();
   renderAuthButtons();
   toast('로그인 완료 ✓');
+
+  // 로그인 후 데이터 로드
+  document.getElementById('aptList').innerHTML = '<div class="loading" style="padding:20px;text-align:center">DB 연결 중...</div>';
+  try {
+    apts = await dbLoadApts();
+    sise = await dbLoadSise();
+    renderList();
+    initFilters();
+  } catch(e) {
+    document.getElementById('aptList').innerHTML = '<div class="no-data">DB 로드 오류</div>';
+    console.error(e);
+  }
 }
 
 async function doLogout() {
@@ -904,6 +916,7 @@ async function doLogout() {
   currentUser = null;
   renderAuthButtons();
   toast('로그아웃 완료');
+  showLogin();
 }
 
 // 로그인 오버레이 바깥 클릭 시 닫기
@@ -1906,7 +1919,12 @@ async function init() {
 
   // 세션 복원
   const { data: { session } } = await sb.auth.getSession();
-  if (session) currentUser = session.user;
+  if (session) {
+    currentUser = session.user;
+  } else {
+    showLogin();
+    return;
+  }
   renderAuthButtons();
 
   // 로딩 표시
